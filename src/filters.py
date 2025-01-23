@@ -1,10 +1,7 @@
 import cv2
 import numpy as np
-from utils import load_annotations, load_image_with_alpha
-import cv2
-import numpy as np
 import mediapipe as mp
-
+from utils import load_annotations, load_image_with_alpha
 
 class Filter:
     def __init__(self, filter_path, annotation_path):
@@ -39,9 +36,6 @@ class Filter:
         return frame
 
 
-
-
-
 class FacemeshFilter:
     def __init__(self):
         # Initialize MediaPipe Face Mesh
@@ -54,24 +48,17 @@ class FacemeshFilter:
             min_tracking_confidence=0.5,
         )
 
-    def overlay_facemesh(self, frame, landmarks):
-        """Draws a facemesh on the frame."""
-        for landmark in landmarks:
-            for pt in landmark:
-                cv2.circle(frame, pt, 1, (0, 255, 0), -1)  # Draw each landmark as a green dot
-        return frame
-
-    def detect_and_draw_facemesh(self, frame):
-        """Detects facial landmarks and draws the facemesh."""
+    def overlay_facemesh(self, frame):
+        """Detects and draws a facemesh overlay on the frame."""
         results = self.face_mesh.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         if not results.multi_face_landmarks:
             return frame  # Return the original frame if no landmarks are detected
 
         for face_landmarks in results.multi_face_landmarks:
-            for landmark in face_landmarks.landmark:
-                x = int(landmark.x * frame.shape[1])
-                y = int(landmark.y * frame.shape[0])
-                cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)  # Draw the landmark points
-
+            mp.solutions.drawing_utils.draw_landmarks(
+                frame,
+                face_landmarks,
+                self.mp_face_mesh.FACEMESH_TESSELATION,
+                connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_tesselation_style()
+            )
         return frame
-

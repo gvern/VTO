@@ -15,10 +15,6 @@ def main():
         ["Facemesh", "Lipstick"]
     )
 
-    # Add opacity control for the Lipstick filter
-    if filter_option == "Lipstick":
-        opacity = st.slider("Adjust Filter Opacity (for Lipstick)", min_value=0.1, max_value=1.0, value=0.8, step=0.1)
-
     if uploaded_image:
         # Load the uploaded image
         file_bytes = np.asarray(bytearray(uploaded_image.read()), dtype=np.uint8)
@@ -27,21 +23,21 @@ def main():
         if filter_option == "Facemesh":
             # Apply the facemesh filter
             facemesh_filter = FacemeshFilter()
-            image_with_facemesh = facemesh_filter.detect_and_draw_facemesh(image)
+            image_with_facemesh = facemesh_filter.overlay_facemesh(image)
             st.image(image_with_facemesh, channels="BGR", caption="Facemesh Filter Applied")
 
         elif filter_option == "Lipstick":
             # Apply the lipstick filter
+            filter_instance = Filter("filters/red_lipstick.png", "filters/lips_annotations.csv")
             detector = LandmarkDetector()
             landmarks = detector.detect_landmarks(image)
-
             if landmarks:
                 points = detector.get_points(landmarks, image.shape)
-                try:
-                    filter_instance = Filter("filters/red_lipstick.png", "filters/lips_annotations.csv")
-                    image_with_filter = filter_instance.overlay_filter(image, points, opacity)
-                    st.image(image_with_filter, channels="BGR", caption="Lipstick Filter Applied")
-                except Exception as e:
-                    st.error(f"An error occurred while applying the filter: {e}")
+                image_with_filter = filter_instance.overlay_filter(image, points)
+                st.image(image_with_filter, channels="BGR", caption="Lipstick Filter Applied")
             else:
                 st.warning("No landmarks detected. Please upload a clear image.")
+
+
+if __name__ == "__main__":
+    main()
