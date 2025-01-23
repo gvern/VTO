@@ -1,6 +1,4 @@
-torch
-torchvision
-numpy
-opencv-python-headless
-pillow
-streamlit
+mediapipe==0.8.9.1
+opencv-python==4.5.5.64
+numpy==1.21.5
+streamlit==1.2.0
