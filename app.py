@@ -1,74 +1,97 @@
 import streamlit as st
-import torch
-import mediapipe as mp
 import cv2
+import mediapipe as mp
 import numpy as np
-from PIL import Image
 
-st.title("GAN-Based Makeup Application")
-st.write("Apply realistic makeup styles using GANs and facial landmark detection.")
+st.title("AR Makeup Application with MediaPipe")
 
-# Load ProgressiveGAN model
-@st.cache_resource
-def load_model():
-    model = torch.hub.load('facebookresearch/pytorch_GAN_zoo:hub', 'PGAN', model_name='celebAHQ-256')
-    return model
-
-model = load_model()
-latent_dim = getattr(model, "latent_size", 512)
-
-# MediaPipe for facial landmarks
+# Initialize MediaPipe Face Mesh
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True, refine_landmarks=True, max_num_faces=1)
+face_mesh = mp_face_mesh.FaceMesh(
+    static_image_mode=False,
+    max_num_faces=1,
+    refine_landmarks=True,  # For iris and lips detection
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5,
+)
 
-# Sidebar: Makeup Styles
-styles = ["Natural", "Red Lips", "Blue Eyeshadow", "Smoky Eyes"]
-selected_style = st.sidebar.selectbox("Choose a makeup style", styles)
+# Initialize Drawing Utils
+mp_drawing = mp.solutions.drawing_utils
+mp_drawing_styles = mp.solutions.drawing_styles
 
-# File uploader for the input image
-uploaded_file = st.file_uploader("Upload your photo", type=["jpg", "png", "jpeg"])
+# Select Makeup Style
+makeup_styles = ["None", "Red Lips", "Blue Eyeshadow", "Highlight Cheeks"]
+selected_style = st.selectbox("Choose a Makeup Style", makeup_styles)
 
-# Helper functions for makeup application
-def apply_lip_color(frame, landmarks, color):
-    lips_idx = mp_face_mesh.FACEMESH_LIPS
-    lip_points = [(int(landmarks.landmark[i].x * frame.shape[1]), 
-                   int(landmarks.landmark[i].y * frame.shape[0])) 
-                  for i in lips_idx]
-    overlay = frame.copy()
-    cv2.fillPoly(overlay, [np.array(lip_points, dtype=np.int32)], color)
-    frame = cv2.addWeighted(overlay, 0.5, frame, 0.5, 0)
-    return frame
+# Camera Input
+image_input = st.camera_input("Take a photo or upload one")
 
-def apply_eye_shadow(frame, landmarks, color):
-    eye_idx = mp_face_mesh.FACEMESH_RIGHT_EYE + mp_face_mesh.FACEMESH_LEFT_EYE
-    eye_points = [(int(landmarks.landmark[i].x * frame.shape[1]), 
-                   int(landmarks.landmark[i].y * frame.shape[0])) 
-                  for i in eye_idx]
-    overlay = frame.copy()
-    cv2.fillPoly(overlay, [np.array(eye_points, dtype=np.int32)], color)
-    frame = cv2.addWeighted(overlay, 0.4, frame, 0.6, 0)
-    return frame
+if image_input:
+    # Read the image
+    file_bytes = np.asarray(bytearray(image_input.read()), dtype=np.uint8)
+    frame = cv2.imdecode(file_bytes, 1)
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB
 
-# Process uploaded image
-if uploaded_file:
-    input_image = Image.open(uploaded_file).convert("RGB")
-    st.image(input_image, caption="Uploaded Image", use_container_width=True)
-
-    # Convert image to numpy array for processing
-    image_np = np.array(input_image)
-    results = face_mesh.process(cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR))
+    # Process the frame
+    results = face_mesh.process(frame)
 
     if results.multi_face_landmarks:
         for face_landmarks in results.multi_face_landmarks:
-            # Apply selected makeup styles
+            # Draw face mesh for debugging
+            mp_drawing.draw_landmarks(
+                frame,
+                face_landmarks,
+                mp_face_mesh.FACEMESH_TESSELATION,
+                landmark_drawing_spec=None,
+                connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_tesselation_style(),
+            )
+
+            # Apply makeup styles
             if selected_style == "Red Lips":
-                image_np = apply_lip_color(image_np, face_landmarks, (0, 0, 255))  # Red
+                frame = apply_lip_color(frame, face_landmarks, (255, 0, 0))  # Red
             elif selected_style == "Blue Eyeshadow":
-                image_np = apply_eye_shadow(image_np, face_landmarks, (255, 0, 0))  # Blue
-            elif selected_style == "Smoky Eyes":
-                image_np = apply_eye_shadow(image_np, face_landmarks, (50, 50, 50))  # Gray
+                frame = apply_eye_shadow(frame, face_landmarks, (0, 0, 255))  # Blue
+            elif selected_style == "Highlight Cheeks":
+                frame = apply_cheek_highlight(frame, face_landmarks, (255, 255, 0))  # Yellow
 
-    st.image(image_np, caption=f"Styled Image: {selected_style}", use_container_width=True)
+    # Display the processed frame
+    st.image(frame, channels="RGB")
 
-# Footer
-st.write("Powered by ProgressiveGAN, MediaPipe, and Streamlit")
+# Helper Functions
+def apply_lip_color(frame, landmarks, color):
+    """Apply lipstick by overlaying color on the lip region."""
+    lips = mp_face_mesh.FACEMESH_LIPS
+    lip_points = [
+        (int(landmarks.landmark[idx].x * frame.shape[1]),
+         int(landmarks.landmark[idx].y * frame.shape[0]))
+        for idx in lips
+    ]
+    overlay = frame.copy()
+    cv2.fillPoly(overlay, [np.array(lip_points, dtype=np.int32)], color)
+    return cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
+
+def apply_eye_shadow(frame, landmarks, color):
+    """Apply eyeshadow by overlaying color on the eye regions."""
+    eyes = mp_face_mesh.FACEMESH_LEFT_EYE.union(mp_face_mesh.FACEMESH_RIGHT_EYE)
+    eye_points = [
+        (int(landmarks.landmark[idx].x * frame.shape[1]),
+         int(landmarks.landmark[idx].y * frame.shape[0]))
+        for idx in eyes
+    ]
+    overlay = frame.copy()
+    cv2.fillPoly(overlay, [np.array(eye_points, dtype=np.int32)], color)
+    return cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
+
+def apply_cheek_highlight(frame, landmarks, color):
+    """Apply highlight on the cheeks by overlaying color on cheek regions."""
+    cheeks = [mp_face_mesh.FACEMESH_LEFT_CHEEK, mp_face_mesh.FACEMESH_RIGHT_CHEEK]
+    for cheek in cheeks:
+        cheek_points = [
+            (int(landmarks.landmark[idx].x * frame.shape[1]),
+             int(landmarks.landmark[idx].y * frame.shape[0]))
+            for idx in cheek
+        ]
+        overlay = frame.copy()
+        cv2.fillPoly(overlay, [np.array(cheek_points, dtype=np.int32)], color)
+        frame = cv2.addWeighted(overlay, 0.4, frame, 0.6, 0)
+    return frame
