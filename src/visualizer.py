@@ -114,19 +114,19 @@ def main():
             detector = LandmarkDetector()
             landmarks = detector.detect_landmarks(image)
 
-        if landmarks:
-            try:
-                image_with_lipstick = apply_lip_color(image, landmarks, (0, 0, 255), opacity=opacity)
-                st.image(image_with_lipstick, channels="BGR", caption="Lipstick Filter Applied")
-            except Exception as e:
-                st.error(f"An error occurred while applying the lipstick filter: {e}")
-            try:
-                frame = apply_makeup(frame, landmarks, REGIONS, region_name, rgb_color)
-                st.image(frame, channels="BGR", caption=f"Applied makeup to {region_name}")
-            except Exception as e:
-                st.error(f"Error applying makeup: {e}")
-        else:
-            st.warning("No landmarks detected. Please upload a clear image.")
+            if landmarks:
+                try:
+                    image_with_lipstick = apply_lip_color(image, landmarks, (0, 0, 255), opacity=opacity)
+                    st.image(image_with_lipstick, channels="BGR", caption="Lipstick Filter Applied")
+                except Exception as e:
+                    st.error(f"An error occurred while applying the lipstick filter: {e}")
+                try:
+                    frame = apply_makeup(frame, landmarks, REGIONS, region_name, rgb_color)
+                    st.image(frame, channels="BGR", caption=f"Applied makeup to {region_name}")
+                except Exception as e:
+                    st.error(f"Error applying makeup: {e}")
+            else:
+                st.warning("No landmarks detected. Please upload a clear image.")
         # Dropdown for region selection
         region_name = st.selectbox("Choose a region to apply makeup", list(REGIONS.keys()))
 
