@@ -1,18 +1,10 @@
 import cv2
 import csv
 import numpy as np
-from PIL import Image
 
 def load_image_with_alpha(image_path):
-    # Attempt to load the image
-    try:
-        img = Image.open("./filters/red_lipstick.png")
-        img.show()  # Open the image to visually confirm it's correct
-        print(f"Image format: {img.format}, Mode: {img.mode}")
-    except Exception as e:
-        print(f"Error loading image with PIL: {e}")
+    """Loads an image with an alpha channel."""
     img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-    print(img.shape)
     if img is None:
         raise FileNotFoundError(f"Error: Cannot load image from path: {image_path}. Please check the file path or integrity.")
     
@@ -22,12 +14,15 @@ def load_image_with_alpha(image_path):
         img = cv2.merge((b, g, r))
     else:  # Image without alpha channel
         b, g, r = cv2.split(img)
-        alpha = None  # No alpha channel
+        alpha = np.ones(img.shape[:2], dtype=img.dtype) * 255  # Create a fully opaque alpha channel
 
     return img, alpha
 
 def load_annotations(csv_path):
     """Loads annotations from a CSV file."""
-    with open(csv_path) as f:
-        reader = csv.reader(f)
-        return [int(row[0]) for row in reader]
+    try:
+        with open(csv_path) as f:
+            reader = csv.reader(f)
+            return [list(map(int, row)) for row in reader]
+    except Exception as e:
+        raise FileNotFoundError(f"Error loading annotations from {csv_path}: {e}")
