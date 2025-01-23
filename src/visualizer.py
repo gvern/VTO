@@ -7,7 +7,16 @@ from filters import Filter, FacemeshFilter
 
 def main():
     st.title("AR Makeup Application")
-    uploaded_image = st.file_uploader("Upload an image", type=["jpg", "png"])
+
+    # Add input options
+    input_option = st.radio("Choose Input Method", ["Upload Image", "Use Camera"])
+    uploaded_image = None
+    if input_option == "Upload Image":
+        uploaded_image = st.file_uploader("Upload an image", type=["jpg", "png"])
+    elif input_option == "Use Camera":
+        camera_image = st.camera_input("Take a photo using your camera")
+        if camera_image:
+            uploaded_image = camera_image
 
     # Add a dropdown menu for filter selection
     filter_option = st.selectbox(
