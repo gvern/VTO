@@ -5,15 +5,15 @@ from landmarks import LandmarkDetector
 from filters import FacemeshFilter
 
 
-def apply_makeup(image, landmarks, regions, region_colors, opacity):
+def apply_makeup(image, landmarks, regions, region_colors, region_opacities):
     """
-    Apply a mask filter to the image based on facial landmarks.
+    Apply a mask filter to the image based on facial landmarks with per-region opacity.
     Args:
         image (np.array): The input image.
         landmarks: The detected facial landmarks (mediapipe object).
         regions (dict): Regions with corresponding facial landmark indices.
         region_colors (dict): Colors for each region (BGR format).
-        opacity (float): Opacity/intensity of the makeup overlay.
+        region_opacities (dict): Opacity/intensity of the makeup overlay for each region.
     Returns:
         np.array: Image with the mask filter applied.
     """
@@ -35,9 +35,24 @@ def apply_makeup(image, landmarks, regions, region_colors, opacity):
                     # Apply color to the mask
                     cv2.fillPoly(mask, [np.array(region_coords, dtype=np.int32)], region_colors[region_name])
 
-        # Smooth and blend the mask with the specified opacity
-        mask = cv2.GaussianBlur(mask, (7, 7), 4)
-        return cv2.addWeighted(image, 1, mask, opacity, 0)
+        # Apply opacity per region and blend the mask
+        result_image = image.copy()
+        for region_name, opacity in region_opacities.items():
+            if region_name in region_colors:
+                mask_region = np.zeros_like(image, dtype=np.uint8)
+                region_coords = [
+                    (
+                        int(landmarks[idx].x * image.shape[1]),
+                        int(landmarks[idx].y * image.shape[0])
+                    )
+                    for idx in regions[region_name] if idx < len(landmarks)
+                ]
+                if region_coords:
+                    cv2.fillPoly(mask_region, [np.array(region_coords, dtype=np.int32)], region_colors[region_name])
+                    mask_region = cv2.GaussianBlur(mask_region, (7, 7), 4)
+                    result_image = cv2.addWeighted(result_image, 1, mask_region, opacity, 0)
+
+        return result_image
 
     except Exception as e:
         raise RuntimeError(f"Error in apply_makeup: {e}")
@@ -95,11 +110,9 @@ def main():
             if landmarks:
                 st.sidebar.title("Customize Regions")
 
-                # Opacity/Intensity slider
-                opacity = st.sidebar.slider("Set Makeup Intensity", min_value=0.1, max_value=1.0, value=0.4, step=0.1)
-
-                # Define region colors and controls
+                # Define region colors, intensities, and controls
                 region_colors = {}
+                region_opacities = {}
                 default_colors = {
                     "BLUSH_LEFT": "#FFCCCC",
                     "BLUSH_RIGHT": "#FFCCCC",
@@ -111,21 +124,35 @@ def main():
                     "LIP_UPPER": "#FF0000",
                     "LIP_LOWER": "#FF0000"
                 }
+                default_opacities = {
+                    "BLUSH_LEFT": 0.3,
+                    "BLUSH_RIGHT": 0.3,
+                    "EYES": 0.5,
+                    "EYEBROWS": 0.5,
+                    "EYESHADOW_LEFT": 0.4,
+                    "EYESHADOW_RIGHT": 0.4,
+                    "FACE": 0.2,
+                    "LIP_UPPER": 0.6,
+                    "LIP_LOWER": 0.6,
+                }
 
-                reset = st.sidebar.button("Reset to Default Colors")
-                if reset:
-                    region_colors = {key: tuple(int(default_colors[key].lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
-                                     for key in default_colors.keys()}
-                else:
-                    for region_name, default_color in default_colors.items():
+                reset = st.sidebar.button("Reset to Default Colors and Intensity")
+                for region_name, default_color in default_colors.items():
+                    if reset:
+                        color = default_color
+                        intensity = default_opacities[region_name]
+                    else:
                         color = st.sidebar.color_picker(f"{region_name} Color", default_color)
-                        # Convert RGB to BGR
-                        rgb_color = tuple(int(color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
-                        bgr_color = (rgb_color[2], rgb_color[1], rgb_color[0])  # Convert to BGR
-                        region_colors[region_name] = bgr_color
+                        intensity = st.sidebar.slider(f"{region_name} Intensity", 0.1, 1.0, default_opacities[region_name])
+
+                    # Convert RGB to BGR and store opacity
+                    rgb_color = tuple(int(color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+                    bgr_color = (rgb_color[2], rgb_color[1], rgb_color[0])  # Convert to BGR
+                    region_colors[region_name] = bgr_color
+                    region_opacities[region_name] = intensity
 
                 try:
-                    image_with_makeup = apply_makeup(image, landmarks, REGIONS, region_colors, opacity)
+                    image_with_makeup = apply_makeup(image, landmarks, REGIONS, region_colors, region_opacities)
                     st.image(image_with_makeup, channels="BGR", caption="Custom Makeup Applied")
                 except Exception as e:
                     st.error(f"Error applying makeup: {e}")
