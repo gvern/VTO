@@ -2,60 +2,40 @@ import streamlit as st
 import cv2
 import numpy as np
 from landmarks import LandmarkDetector
-from filters import Filter, FacemeshFilter, FACE_CONNECTIONS
+from filters import FacemeshFilter
 import mediapipe as mp
 
-def apply_lip_color(frame, landmarks, region_points, color, opacity=0.6):
+
+def apply_makeup(image, landmarks, regions, region_colors):
     """
-    Apply lipstick by overlaying color on the lip region using predefined region points.
+    Apply a mask filter to the image based on facial landmarks.
     Args:
-        frame (numpy.ndarray): The input image.
-        landmarks: The detected facial landmarks.
-        region_points (list): The list of landmark indices defining the region.
-        color (tuple): The RGB color to apply (e.g., (0, 0, 255) for red).
-        opacity (float): Opacity of the overlay (0.0 to 1.0).
+        image (np.array): The input image.
+        landmarks: The detected facial landmarks (mediapipe object).
+        regions (dict): Regions with corresponding facial landmark indices.
+        region_colors (dict): Colors for each region.
     Returns:
-        numpy.ndarray: Image with lipstick applied.
+        np.array: Image with the mask filter applied.
     """
-    try:
-        # Convert the landmark indices to pixel coordinates
-        region_coords = [
-            (int(landmarks.landmark[idx].x * frame.shape[1]),
-             int(landmarks.landmark[idx].y * frame.shape[0]))
-            for idx in region_points
-        ]
+    mask = np.zeros_like(image, dtype=np.uint8)  # Initialize a blank mask
 
-        # Validate that region_coords is not empty
-        if not region_coords:
-            raise ValueError("Region coordinates are empty. Cannot apply makeup.")
+    for region_name, region_points in regions.items():
+        if region_name in region_colors:
+            # Extract region coordinates
+            region_coords = [
+                (int(landmarks[idx].x * image.shape[1]),
+                 int(landmarks[idx].y * image.shape[0]))
+                for idx in region_points
+            ]
 
-        # Create an overlay
-        overlay = frame.copy()
-        cv2.fillPoly(overlay, [np.array(region_coords, dtype=np.int32)], color)
+            if len(region_coords) > 0:
+                # Apply color to the mask
+                cv2.fillPoly(mask, [np.array(region_coords, dtype=np.int32)], region_colors[region_name])
 
-        # Blend the overlay with the original frame
-        return cv2.addWeighted(overlay, opacity, frame, 1 - opacity, 0)
+    # Smooth the mask for better blending
+    mask = cv2.GaussianBlur(mask, (7, 7), 4)
+    return cv2.addWeighted(image, 1, mask, 0.4, 0)
 
-    except Exception as e:
-        raise RuntimeError(f"Error in apply_lip_color: {e}")
-def apply_makeup(frame, landmarks, regions, region_name, color, opacity=0.6):
-    """
-    Apply makeup to a specific region defined by region_name.
-    Args:
-        frame (numpy.ndarray): The input image.
-        landmarks: The detected facial landmarks.
-        regions (dict): Dictionary containing regions and their landmark indices.
-        region_name (str): The name of the region to apply makeup.
-        color (tuple): The RGB color to apply.
-        opacity (float): Opacity of the overlay (0.0 to 1.0).
-    Returns:
-        numpy.ndarray: Image with makeup applied.
-    """
-    if region_name not in regions:
-        raise ValueError(f"Region '{region_name}' not found in regions dictionary.")
-
-    region_points = regions[region_name]
-    return apply_lip_color(frame, landmarks, region_points, color, opacity)
 
 REGIONS = {
     "BLUSH_LEFT": [50],
@@ -86,55 +66,42 @@ def main():
         camera_image = st.camera_input("Take a photo using your camera")
         if camera_image:
             uploaded_image = camera_image
-    frame = None  # Initialize the frame variable
-    # Add a dropdown menu for filter selection
-    filter_option = st.selectbox(
-        "Choose a filter to apply",
-        ["Facemesh", "Lipstick"]
-    )
-
-    # Add opacity control for Lipstick filter
-    if filter_option == "Lipstick":
-        opacity = st.slider("Adjust Filter Opacity (for Lipstick)", min_value=0.1, max_value=1.0, value=0.8, step=0.1)
 
     if uploaded_image:
         # Load the uploaded image
         file_bytes = np.asarray(bytearray(uploaded_image.read()), dtype=np.uint8)
         image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-        if filter_option == "Facemesh":
-            # Apply the facemesh filter
+        # Filter options
+        filter_option = st.selectbox(
+            "Choose a filter to apply",
+            ["Facemesh", "Custom Makeup"]
+        )
+
+        detector = LandmarkDetector()
+        landmarks = detector.detect_landmarks(image)
+        if filter_option == "Custom Makeup":
+                    if landmarks:
+                        st.sidebar.title("Customize Regions")
+                        region_colors = {}
+                        for region_name in REGIONS.keys():
+                            color = st.sidebar.color_picker(f"{region_name} Color", "#FFFFFF")
+                            rgb_color = tuple(int(color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+                            region_colors[region_name] = rgb_color
+
+                        try:
+                            image_with_makeup = apply_makeup(image, landmarks, REGIONS, region_colors)
+                            st.image(image_with_makeup, channels="BGR", caption="Custom Makeup Applied")
+                        except Exception as e:
+                            st.error(f"Error applying makeup: {e}")
+                    else:
+                        st.warning("No landmarks detected. Please upload a clear image.")
+        elif filter_option == "Facemesh":
             facemesh_filter = FacemeshFilter()
             image_with_facemesh = facemesh_filter.detect_and_draw_facemesh(image)
             st.image(image_with_facemesh, channels="BGR", caption="Facemesh Filter Applied")
 
-
-        elif filter_option == "Lipstick":
-            # Apply the lipstick filter
-            detector = LandmarkDetector()
-            landmarks = detector.detect_landmarks(image)
-
-            if landmarks:
-                try:
-                    image_with_lipstick = apply_lip_color(image, landmarks, (0, 0, 255), opacity=opacity)
-                    st.image(image_with_lipstick, channels="BGR", caption="Lipstick Filter Applied")
-                except Exception as e:
-                    st.error(f"An error occurred while applying the lipstick filter: {e}")
-                try:
-                    frame = apply_makeup(frame, landmarks, REGIONS, region_name, rgb_color)
-                    st.image(frame, channels="BGR", caption=f"Applied makeup to {region_name}")
-                except Exception as e:
-                    st.error(f"Error applying makeup: {e}")
-            else:
-                st.warning("No landmarks detected. Please upload a clear image.")
-        # Dropdown for region selection
-        region_name = st.selectbox("Choose a region to apply makeup", list(REGIONS.keys()))
-
-        # Color picker for makeup
-        color = st.color_picker("Pick a color for the makeup", "#FF0000")
-        rgb_color = tuple(int(color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
-
-    
+        
 
 
 if __name__ == "__main__":
